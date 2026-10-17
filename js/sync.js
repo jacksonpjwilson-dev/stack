@@ -1,16 +1,17 @@
 // Bulk import of a bank snapshot pasted by the Stack Finance bot (or the user).
 import {ctx,save,pushCloud} from "./store.js";
+import {applyOverride,applyDue} from "./virtuals.js";
 const isDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(String(s||""));
 export function parsePayload(text){
   let p;try{p=JSON.parse(String(text||"").trim());}catch(e){throw new Error("Not valid JSON: "+e.message);}
   if(!p||typeof p!=="object")throw new Error("Expected a JSON object");
   const accounts=Array.isArray(p.accounts)?p.accounts:[],transactions=Array.isArray(p.transactions)?p.transactions:[];
-  if(!accounts.length&&!transactions.length)throw new Error("No accounts or transactions found");
+  if(!accounts.length&&!transactions.length&&!Array.isArray(p.virtualAccounts))throw new Error("No accounts or transactions found");
   const errs=[];
   accounts.forEach((a,i)=>{if(!a||!a.id)errs.push(`accounts[${i}] missing id`);});
   transactions.forEach((t,i)=>{if(!t||!t.id)errs.push(`transactions[${i}] missing id`);else{if(!isDate(t.date))errs.push(`transactions[${i}] date must be YYYY-MM-DD`);if(!Number.isFinite(Number(t.amount)))errs.push(`transactions[${i}] amount not a number`);}});
   if(errs.length)throw new Error(errs.slice(0,6).join("; ")+(errs.length>6?` (+${errs.length-6} more)`:""));
-  return {lastSynced:p.lastSynced||new Date().toISOString(),accounts,transactions,flip:p.amountSign==="positive-outflow"};
+  return {lastSynced:p.lastSynced||new Date().toISOString(),accounts,transactions,virtualAccounts:Array.isArray(p.virtualAccounts)?p.virtualAccounts:[],flip:p.amountSign==="positive-outflow"};
 }
 export function applyPayload(p){
   const B=ctx.S.bank;const r={accountsUpdated:0,accountsAdded:0,added:0,updated:0,unchanged:0};
@@ -44,6 +45,7 @@ export function applyPayload(p){
   r.pendingResolved=before-B.transactions.length;
   B.transactions.sort((a,b)=>b.date.localeCompare(a.date));
   B.lastSynced=p.lastSynced;
+  r.contributionsApplied=applyDue();r.virtualsOverridden=applyOverride(p.virtualAccounts);
   B.imports=[{at:Date.now(),lastSynced:p.lastSynced,...r},...(B.imports||[])].slice(0,20);
   return r;
 }

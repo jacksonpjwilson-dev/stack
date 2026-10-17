@@ -1,5 +1,6 @@
 import {ctx} from "./store.js";
 import * as A from "./analysis.js";
+import * as VA from "./virtuals.js";
 import {esc,ago,todayISO,monthKey,monthLabel,niceDate,daysBetween,addDays} from "./util.js";
 
 export function money(n,signed=false){const S=ctx.S,v=Number(n)||0;if(S.settings.hideMoney)return "•••";const abs=Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});const sign=signed?(v>0?"+":v<0?"−":""):(v<0?"−":"");return `${sign}${S.settings.symbol||"$"}${abs}`;}
@@ -16,7 +17,12 @@ export function home(){
   const cash=acc.filter(a=>!A.isCredit(a)).reduce((s,a)=>s+A.accountBalance(a),0);
   const owed=acc.filter(A.isCredit).reduce((s,a)=>s+Math.abs(A.accountBalance(a)),0);
   const w=A.weekly(),f=A.forecast(60);
-  const tiles=acc.map(a=>`<div class="acct"><div class="n">${esc(a.name)}${a.mask?" ··"+esc(a.mask):""}</div><div class="b ${A.isCredit(a)?"neg":""}">${money(A.isCredit(a)?-Math.abs(A.accountBalance(a)):A.accountBalance(a))}</div>${a.availableBalance!=null&&a.availableBalance!==a.currentBalance?`<div class="tiny">${money(a.availableBalance)} available</div>`:""}</div>`).join("");
+  const net=!!S.settings.netCredit;
+  const tiles=acc.map(a=>{if(A.isCredit(a))return `<div class="acct"><div class="n">${esc(a.name)}${a.mask?" ··"+esc(a.mask):""}</div><div class="b neg">${money(-Math.abs(A.accountBalance(a)))}</div>${net?'<div class="tiny">counted against Chequing</div>':""}</div>`;
+    const isChq=/check|chequ/i.test(a.subtype||a.name||""),free=VA.freeBalance(a)-(isChq&&net?owed:0),held=VA.allocatedIn(a);
+    const lbl=isChq?"Chequing":/saving/i.test(a.subtype||a.name||"")?"Savings":a.name;
+    return `<div class="acct"><div class="n">${esc(a.name)}${a.mask?" ··"+esc(a.mask):""}</div><div class="b ${free<0?"neg":""}">${money(free)}</div><div class="tiny">${esc(lbl)} free${held||(isChq&&net&&owed)?` · bank ${money(A.accountBalance(a))}`:""}${held?` · ${money(held)} in virtual`:""}${isChq&&net&&owed?` · −${money(owed)} cards`:""}</div></div>`;}).join("");
+  const virt=(S.virtuals||[]).map(v=>`<div class="kv" onclick="openVirtual('${v.id}')"><span class="l">${esc(v.name)}<br><span class="tiny">${ruleText(v)}</span></span><b>${money(v.amount)}</b></div>`).join("");
   const flags=[...w.large.map(t=>`<div class="kv"><span class="l">${esc(t.merchant)} <span class="flag">large</span><br><span class="tiny">${niceDate(t.date)} · ${A.categoryOf(t)}</span></span><b>${money(t.amount)}</b></div>`),
     ...w.dupes.map(([a,b])=>`<div class="kv"><span class="l">${esc(a.merchant)} <span class="flag">possible duplicate</span><br><span class="tiny">${niceDate(a.date)} & ${niceDate(b.date)}</span></span><b>${money(a.amount)}</b></div>`)].join("");
   const fc=f?`<div class="card ${f.firstLow?"warn":""}" onclick="showView('plan')"><div class="tiny">Chequing forecast</div>
@@ -25,11 +31,14 @@ export function home(){
     ${f.firstLow?`<div class="tiny neg">Heads up: drops below ${money(f.low)} around ${niceDate(f.firstLow.date)}.</div>`:""}</div>`:"";
   return syncLine()+`<div class="totalcard card"><div class="tiny">Cash across accounts</div><div class="amount" style="font-size:30px;font-weight:700">${money(cash)}</div>${owed?`<div class="tiny">Credit owed ${money(owed)}</div>`:""}</div>
   <div class="grid2" style="margin:12px 0">${tiles}</div>
+  <div class="card"><div class="section-title">Virtual accounts</div>${virt||'<div class="tiny">None</div>'}<button class="btn ghost" onclick="openVirtual()">Add virtual account</button></div>
   <div class="card"><div class="section-title">This week</div>
     <div class="grid2"><div><div class="tiny">In</div><div class="pos" style="font-size:20px;font-weight:650">${money(w.inn)}</div></div><div><div class="tiny">Out</div><div style="font-size:20px;font-weight:650">${money(w.out)}</div></div></div>
     ${flags?`<div style="margin-top:10px">${flags}</div>`:`<div class="tiny" style="margin-top:8px">Nothing unusual this week.</div>`}</div>
   ${fc}${goalsMini()}`;
 }
+export function ruleText(v){const r=v.rule||{};if(!(r.amount>0))return "no schedule";const last=(v.log||[]).filter(e=>e.type==="contribution").slice(-1)[0];
+  return `+${money(r.amount)} on day ${r.day}${r.endDate?` until ${niceDate(r.endDate)}`:""}${r.cap?` up to ${money(r.cap)}`:""} · from ${(r.sources||[]).join(" → ")}${last?` · last ${niceDate(last.date)} from ${esc(last.accountName)}`:""}`;}
 function goalsMini(){const g=ctx.S.goals.slice(0,2).map(goalCard).join("");return g?`<div class="section-title" style="margin-top:14px">Goals</div>${g}`:"";}
 
 export function spending(){
@@ -52,10 +61,10 @@ export function spending(){
 
 export function budgets(){
   const mk=monthKey(),rows=A.budgetRows(mk);const day=new Date().getDate(),dim=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
-  const unb=Object.entries(A.spendByCat(mk)).filter(([c])=>!rows.some(r=>r.category===c)).sort((a,b)=>b[1]-a[1]);
+  const unb=Object.entries(A.spendByCat(mk)).filter(([c])=>!rows.some(r=>r.cats.includes(c))).sort((a,b)=>b[1]-a[1]);
   return syncLine()+`<div class="card"><div class="tiny">${monthLabel(mk)} · day ${day} of ${dim}</div><div class="tiny">Budgets fill automatically from synced spending.</div></div>
   ${rows.map(r=>{const pct=r.limit?r.spent/r.limit*100:0,pace=day/dim*100,over=r.spent>r.limit,hot=!over&&pct>pace+10;
-    return `<div class="card ${over?"warn":""}" onclick="openBudget('${r.id}')"><div class="row" style="justify-content:space-between"><span>${dot(r.category)}<b>${r.category}</b></span><span>${money(r.spent)} <span class="tiny">/ ${money(r.limit)}</span></span></div>${bar(pct,over?"var(--red)":A.catColor(r.category))}
+    return `<div class="card ${over?"warn":""}" onclick="openBudget('${r.id}')"><div class="row" style="justify-content:space-between"><span>${dot(r.cats[0])}<b>${esc(r.name||r.cats.join(" + "))}</b>${r.cats.length>1||r.name!==r.cats[0]?`<br><span class="tiny">${r.cats.join(" + ")}</span>`:""}</span><span>${money(r.spent)} <span class="tiny">/ ${money(r.limit)}</span></span></div>${bar(pct,over?"var(--red)":A.catColor(r.cats[0]))}
     <div class="tiny">${over?`<span class="neg">Over by ${money(r.spent-r.limit)}</span>`:`${money(r.limit-r.spent)} left`}${hot?' <span class="flag">ahead of pace</span>':""}</div></div>`;}).join("")}
   <button class="btn" onclick="openBudget()">Add budget</button>
   ${unb.length?`<div class="card" style="margin-top:12px"><div class="section-title">Spending without a budget</div>${unb.map(([c,v])=>`<div class="kv"><span>${dot(c)}${c}</span><span><b>${money(v)}</b> <button class="chip" onclick="openBudget(null,'${c}')">+ budget</button></span></div>`).join("")}</div>`:""}`;
@@ -63,7 +72,8 @@ export function budgets(){
 
 export function goalCard(g){
   const S=ctx.S,acct=S.bank.accounts.find(a=>a.id===g.accountId);
-  const saved=acct?Math.max(0,A.accountBalance(acct)-(Number(g.startBalance)||0)):Number(g.saved)||0;
+  const va=(S.virtuals||[]).find(v=>v.id===g.virtualId);
+  const saved=va?Number(va.amount)||0:acct?Math.max(0,A.accountBalance(acct)-(Number(g.startBalance)||0)):Number(g.saved)||0;
   const target=Number(g.target)||0,left=Math.max(0,target-saved),today=todayISO();
   const days=g.date?daysBetween(today,g.date):null;const pc=g.date?A.paychequesBetween(today,g.date):null;
   const per=pc&&pc.n?left/pc.n:null;
@@ -72,7 +82,7 @@ export function goalCard(g){
   let status="";if(!target)status='<span class="flag">set a target</span>';else if(left<=0)status='<span class="flag ok">reached</span>';else if(days!=null&&days<0)status='<span class="flag">past due</span>';else if(needMo!=null&&T.length)status=surplusMo>=needMo?'<span class="flag ok">on track</span>':'<span class="flag">behind</span>';
   return `<div class="card" onclick="openGoal('${g.id}')"><div class="row" style="justify-content:space-between"><b>${esc(g.name)}</b>${status}</div>
    ${bar(target?saved/target*100:0,"var(--gold)")}
-   <div class="row" style="justify-content:space-between"><span class="tiny">${money(saved)} of ${money(target)}${acct?` · from ${esc(acct.name)}`:""}</span><span class="tiny">${g.date?`${niceDate(g.date)} · ${days>=0?days+" days":"passed"}`:""}</span></div>
+   <div class="row" style="justify-content:space-between"><span class="tiny">${money(saved)} of ${money(target)}${va?` · ${esc(va.name)} (virtual)`:acct?` · from ${esc(acct.name)}`:""}</span><span class="tiny">${g.date?`${niceDate(g.date)} · ${days>=0?days+" days":"passed"}`:""}</span></div>
    ${left>0&&target?`<div class="tiny" style="margin-top:6px">${per!=null?`Save <b>${money(per)}</b> per paycheque (${pc.n} left)`:days>0?`Save ${money(left/Math.max(1,days/7))}/week (no paycheque pattern detected yet)`:""}</div>`:""}</div>`;
 }
 export function goals(){return syncLine()+ctx.S.goals.map(goalCard).join("")+`<button class="btn" onclick="openGoal()">Add goal</button>`;}
@@ -86,7 +96,7 @@ export function plan(){
   const f=A.forecast(60),rec=A.recurring(),ch=rec.filter(r=>r.type==="charge"),inc=rec.filter(r=>r.type==="income");
   const total=ch.reduce((s,r)=>s+A.monthlyCost(r),0);
   const fc=!f?empty("Forecast needs a synced chequing account."):`<div class="card ${f.firstLow?"warn":""}"><div class="section-title">Cash-flow forecast · ${esc(f.acct.name)}</div>${chart(f)}
-    <div class="kv"><span>Today</span><b>${money(f.start)}</b></div>
+    <div class="kv"><span>Today${f.net&&f.owed?" (free, net of cards)":" (free)"}</span><b>${money(f.start)}</b></div>
     ${f.nextPay?`<div class="kv"><span>Day before payday (${niceDate(f.nextPay.date)})</span><b>${money(f.balAtPay)}</b></div><div class="kv"><span>Next paycheque</span><b class="pos">${money(f.nextPay.amount,true)}</b></div>`:'<div class="tiny">No recurring deposit detected yet (needs 2+ regular paycheques).</div>'}
     <div class="kv"><span>Lowest (${niceDate(f.min.date)})</span><b class="${f.min.bal<f.low?"neg":""}">${money(f.min.bal)}</b></div>
     <div class="kv"><span>Everyday spending assumed</span><b>${money(f.daily*30.44)}/mo</b></div><div class="kv"><span>In 60 days</span><b>${money(f.end)}</b></div>
@@ -116,6 +126,7 @@ export function settings(){const S=ctx.S,st=S.settings;
   <div class="card"><label>Name</label><input id="s-name" value="${esc(st.name)}">
    <label>Low-balance warning (chequing)</label><input id="s-low" type="number" value="${esc(st.lowBalance)}">
    <label>Forecast account</label><select id="s-prim"><option value="">Auto (chequing)</option>${S.bank.accounts.map(a=>`<option value="${esc(a.id)}" ${a.id===st.primaryAccountId?"selected":""}>${esc(a.name)}</option>`).join("")}</select>
+   <label><input type="checkbox" id="s-net" ${st.netCredit?"checked":""} style="width:auto"> Show Chequing net of credit cards owed (card spending counts against Chequing)</label>
    <label><input type="checkbox" id="s-inv" ${st.showInvest?"checked":""} style="width:auto"> Show Invest tab</label>
    <label><input type="checkbox" id="s-hide" ${st.hideMoney?"checked":""} style="width:auto"> Hide amounts</label>
    <button class="btn" onclick="saveSettings()">Save</button></div>
