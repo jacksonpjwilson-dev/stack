@@ -6,7 +6,7 @@ import {esc,val,num,uid,monthKey,monthLabel,todayISO} from "./util.js";
 import {demoState} from "./demo.js";
 import * as VA from "./virtuals.js";
 
-export const APP_BUILD=41;
+export const APP_BUILD=42;
 ctx.S=ctx.demo?migrate(demoState()):loadLocal();
 if(VA.applyDue())save();
 
@@ -30,7 +30,7 @@ G.closeSheet=()=>document.getElementById("sheet").classList.remove("open");
 const catOpts=sel=>A.CATS.map(([c])=>`<option ${c===sel?"selected":""}>${c}</option>`).join("");
 
 G.doSync=async()=>{const out=document.getElementById("syncResult"),btn=document.getElementById("syncBtn");btn.disabled=true;
-  try{const r=await runSync(val("syncInput"));out.innerHTML=`<span class="pos">Imported.</span> +${r.added} new, ${r.updated} updated, ${r.unchanged} unchanged, ${r.pendingResolved} pending resolved${r.virtualsOverridden?` · ${r.virtualsOverridden} virtual set`:""}${r.contributionsApplied?` · ${r.contributionsApplied} contributions`:""} · ${r.accountsUpdated} accounts updated, ${r.accountsAdded} added · ${esc(r.cloud)}`;out.dataset.status="ok";document.getElementById("syncInput").value="";}
+  try{const r=await runSync(val("syncInput"));out.innerHTML=`<span class="pos">Imported.</span> +${r.added} new, ${r.updated} updated, ${r.unchanged} unchanged, ${r.pendingResolved} pending resolved${r.virtualsOverridden?` · ${r.virtualsOverridden} virtual set`:""}${r.contributionsApplied?` · ${r.contributionsApplied} contributions`:""} · ${r.accountsUpdated} accounts updated, ${r.accountsAdded} added · ${esc(r.cloud)}`;out.dataset.status="ok";document.getElementById("syncInput").value="";const st=document.getElementById("syncStats");if(st)st.innerHTML=V.syncStats();}
   catch(e){out.innerHTML=`<span class="neg">Import failed: ${esc(e.message)}</span>`;out.dataset.status="error";}
   btn.disabled=false;};
 
@@ -94,7 +94,7 @@ const hideAuth=()=>document.getElementById("authGate").classList.remove("show");
 function initFirebase(){
   if(ctx.demo||typeof firebase==="undefined")return false;
   try{if(!ctx.fbAuth){firebase.initializeApp(fbConfig());ctx.fbAuth=firebase.auth();ctx.fbDb=firebase.firestore();}
-    ctx.fbAuth.onAuthStateChanged(async u=>{ctx.fbUser=u||null;if(u){ctx.fbSkip=false;hideAuth();authMsg("");await pullCloud();if(VA.applyDue())save();render();}else if(!ctx.fbSkip)G.showAuth();render();});return true;}
+    ctx.fbAuth.onAuthStateChanged(async u=>{ctx.fbUser=u||null;if(u){ctx.fbSkip=false;hideAuth();authMsg("");ctx.pulling=pullCloud();await ctx.pulling;ctx.pulling=null;if(VA.applyDue())save();render();}else if(!ctx.fbSkip)G.showAuth();render();});return true;}
   catch(e){console.warn(e);return false;}
 }
 G.authSignIn=async()=>{if(!ctx.fbAuth)return authMsg("Cloud unavailable (offline?)");try{authMsg("Signing in…");await ctx.fbAuth.signInWithEmailAndPassword(val("authEmail"),val("authPass"));}catch(e){authMsg(e.message);}};

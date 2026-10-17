@@ -4,13 +4,22 @@ import {todayISO,addMonths,pad,uid} from "./util.js";
 import {accountBalance,isCredit} from "./analysis.js";
 
 export const TEMPLATES=[
-  {key:"vacation",name:"Vacation",amount:0,rule:{amount:500,day:28,endDate:"2026-12-31",cap:null,sources:["savings","chequing"]}},
-  {key:"emergency",name:"Emergency",amount:0,rule:{amount:500,day:1,endDate:"",cap:5000,sources:["savings","chequing"]}},
+  {key:"vacation",name:"Vacation",amount:0,rule:{amount:500,day:28,endDate:"2026-12-31",cap:null,sources:["chequing"]}},
+  {key:"emergency",name:"Emergency",amount:0,rule:{amount:500,day:1,endDate:"",cap:5000,sources:["chequing"]}},
   {key:"debt",name:"Debt",amount:0,rule:{amount:500,day:1,endDate:"",cap:null,sources:["savings","chequing"]}}
 ];
 // Called from migrate(): seed once.
 export function seedVirtuals(s){
   if(!Array.isArray(s.virtuals))s.virtuals=[];
+  // fix-1: Vacation/Emergency fund from Chequing only (only if still the old default)
+  if(!s.settings.fix1Sources){
+    for(const v of s.virtuals)if((v.id==="va-vacation"||v.id==="va-emergency")&&v.rule&&JSON.stringify(v.rule.sources)==='["savings","chequing"]'){
+      v.rule.sources=["chequing"];
+      // re-attribute already-held money to Chequing so it reduces Chequing free
+      (v.log||[]).forEach(e=>{if(e.type==="contribution"&&e.accountId){e.accountId="";e.accountName="Chequing";}});
+    }
+    s.settings.fix1Sources=true;
+  }
   if(s.settings.virtualsSeeded)return;
   const today=todayISO();
   const legacy=(s.legacy&&Array.isArray(s.legacy.accounts))?s.legacy.accounts.filter(a=>a&&a.name):[];

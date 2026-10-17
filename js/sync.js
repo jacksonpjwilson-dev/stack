@@ -50,7 +50,7 @@ export function applyPayload(p){
   return r;
 }
 export async function runSync(text){
-  const p=parsePayload(text);const r=applyPayload(p);save();
+  const p=parsePayload(text);if(ctx.pulling){try{await ctx.pulling;}catch(e){}}const r=applyPayload(p);save();
   const cloud=ctx.demo?"demo (not saved)":ctx.fbUser?((await pushCloud())?"saved to cloud":"cloud save FAILED, kept on this device"):"saved on this device only (not signed in)";
   return {...r,cloud};
 }

@@ -42,7 +42,9 @@ export function migrate(raw){
   if((raw.schema||0)<SCHEMA){
     s.legacy.migratedFrom=raw.schema||2; s.legacy.migratedAt=Date.now();
     // turn old pots into budgets where they had a category
-    (raw.envelopes||[]).forEach(e=>{if(e&&e.category&&e.amount&&!s.budgets.some(b=>b.category===e.category))s.budgets.push({id:uid(),category:e.category,limit:Number(e.amount)||0});});
+    // pots -> budgets, but skip categories the seeded multi-category budgets (Food, Gas) already cover
+    const seeded=["Groceries","Dining","Gas"];
+    (raw.envelopes||[]).forEach(e=>{if(e&&e.category&&e.amount&&!seeded.includes(e.category)&&!s.budgets.some(b=>b.category===e.category))s.budgets.push({id:uid(),category:e.category,limit:Number(e.amount)||0});});
   }
   s.schema=SCHEMA;
   return seed(s);
@@ -55,6 +57,11 @@ function seed(s){
     if(!has("Food"))s.budgets.push({id:"budget-food",name:"Food",categories:["Groceries","Dining"],limit:400});
     if(!has("Gas"))s.budgets.push({id:"budget-gas",name:"Gas",categories:["Gas"],limit:300});
     s.settings.budgetsV2Seeded=true;
+  }
+  if(!s.settings.fix1Budgets){
+    // drop single-category budgets fully covered by another multi-category budget (e.g. old "Groceries" pot vs Food)
+    s.budgets=s.budgets.filter(b=>!(b.categories.length===1&&s.budgets.some(o=>o!==b&&o.categories.length>1&&o.categories.includes(b.categories[0]))));
+    s.settings.fix1Budgets=true;
   }
   seedVirtuals(s);
   if(!s.settings.drGoalSeeded){

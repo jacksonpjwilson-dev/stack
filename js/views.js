@@ -119,7 +119,8 @@ export function sync(){const B=ctx.S.bank;const last=(B.imports||[])[0];
   return syncLine()+`<div class="card"><div class="section-title">Sync bank data</div><div class="tiny">Paste the JSON snapshot from Stack Finance and tap Import. Accounts update in place; transactions are de-duplicated by id. Nothing here is ever published to GitHub.</div>
   <textarea id="syncInput" class="syncbox" placeholder='{"lastSynced":"…","accounts":[…],"transactions":[…]}'></textarea>
   <button class="btn" id="syncBtn" onclick="doSync()">Import</button><div id="syncResult" class="tiny" style="margin-top:8px">${last?`Last import ${ago(last.at)}: +${last.added} new, ${last.updated} updated, ${last.accountsUpdated+last.accountsAdded} accounts.`:""}</div></div>
-  <div class="card"><div class="tiny">${B.accounts.length} accounts · ${B.transactions.length} transactions stored${B.transactions.length>4000?' · <span class="neg">getting large; consider trimming history</span>':""}</div></div>`;}
+  <div class="card"><div class="tiny" id="syncStats">${syncStats()}</div></div>`;}
+export function syncStats(){const B=ctx.S.bank;return `${B.accounts.length} accounts · ${B.transactions.length} transactions stored${B.lastSynced?" · last synced "+ago(B.lastSynced):""}${B.transactions.length>4000?' · <span class="neg">getting large; consider trimming history</span>':""}`;}
 
 export function settings(){const S=ctx.S,st=S.settings;
   return `<div class="card"><div class="section-title">Account</div><div class="tiny">${ctx.fbUser?"Signed in as "+esc(ctx.fbUser.email):ctx.demo?"Demo mode: nothing is saved":"Not signed in. Data is only on this device."}</div>${ctx.fbUser?'<button class="btn ghost" onclick="authSignOut()">Sign out</button>':ctx.demo?"":'<button class="btn" onclick="showAuth()">Sign in</button>'}</div>
