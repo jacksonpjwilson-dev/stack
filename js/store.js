@@ -64,8 +64,19 @@ function seed(s){
     s.settings.fix1Budgets=true;
   }
   seedVirtuals(s);
+  // fix-2: merge the auto-seeded DR goal into an existing vacation-like goal; link it to the Vacation virtual account
+  if(!s.settings.fix2Goals){
+    const isVac=g=>g.id!=="goal-dr-trip"&&/vacation|trip|travel|dominican|holiday/i.test(g.name||"");
+    const vg=s.goals.find(isVac),dr=s.goals.find(g=>g.id==="goal-dr-trip");
+    const va=(s.virtuals||[]).find(v=>v.id==="va-vacation")||(s.virtuals||[]).find(v=>/vacation|trip|travel/i.test(v.name));
+    if(vg){
+      if(dr&&!(Number(dr.target)>0)&&!(Number(dr.saved)>0))s.goals=s.goals.filter(g=>g!==dr);
+      if(va&&!vg.virtualId){vg.virtualId=va.id;vg.legacySaved=vg.saved;}
+    }
+    s.settings.fix2Goals=true;
+  }
   if(!s.settings.drGoalSeeded){
-    if(!s.goals.some(g=>/dominican/i.test(g.name||"")))
+    if(!s.goals.some(g=>/dominican|vacation|trip|travel|holiday/i.test(g.name||"")))
       s.goals.push({id:"goal-dr-trip",name:"Dominican Republic trip",target:0,saved:0,date:"2026-12-28",accountId:""});
     s.settings.drGoalSeeded=true;
   }

@@ -26,7 +26,7 @@ export function home(){
   const flags=[...w.large.map(t=>`<div class="kv"><span class="l">${esc(t.merchant)} <span class="flag">large</span><br><span class="tiny">${niceDate(t.date)} · ${A.categoryOf(t)}</span></span><b>${money(t.amount)}</b></div>`),
     ...w.dupes.map(([a,b])=>`<div class="kv"><span class="l">${esc(a.merchant)} <span class="flag">possible duplicate</span><br><span class="tiny">${niceDate(a.date)} & ${niceDate(b.date)}</span></span><b>${money(a.amount)}</b></div>`)].join("");
   const fc=f?`<div class="card ${f.firstLow?"warn":""}" onclick="showView('plan')"><div class="tiny">Chequing forecast</div>
-    ${f.nextPay?`<div class="row" style="justify-content:space-between"><span>Before next payday (${niceDate(f.nextPay.date)})</span><b>${money(f.balAtPay)}</b></div>`:`<div class="tiny">No regular paycheque detected yet.</div>`}
+    ${f.nextPay?`<div class="row" style="justify-content:space-between"><span>Before next payday (${niceDate(f.nextPay.date)})</span><b>${money(f.balAtPay)}</b></div>`:`<div class="tiny">Not enough history yet. Set your pay schedule in Settings.</div>`}
     <div class="row" style="justify-content:space-between"><span>Lowest in 60 days</span><b class="${f.min.bal<f.low?"neg":""}">${money(f.min.bal)}</b></div>
     ${f.firstLow?`<div class="tiny neg">Heads up: drops below ${money(f.low)} around ${niceDate(f.firstLow.date)}.</div>`:""}</div>`:"";
   return syncLine()+`<div class="totalcard card"><div class="tiny">Cash across accounts</div><div class="amount" style="font-size:30px;font-weight:700">${money(cash)}</div>${owed?`<div class="tiny">Credit owed ${money(owed)}</div>`:""}</div>
@@ -83,7 +83,7 @@ export function goalCard(g){
   return `<div class="card" onclick="openGoal('${g.id}')"><div class="row" style="justify-content:space-between"><b>${esc(g.name)}</b>${status}</div>
    ${bar(target?saved/target*100:0,"var(--gold)")}
    <div class="row" style="justify-content:space-between"><span class="tiny">${money(saved)} of ${money(target)}${va?` · ${esc(va.name)} (virtual)`:acct?` · from ${esc(acct.name)}`:""}</span><span class="tiny">${g.date?`${niceDate(g.date)} · ${days>=0?days+" days":"passed"}`:""}</span></div>
-   ${left>0&&target?`<div class="tiny" style="margin-top:6px">${per!=null?`Save <b>${money(per)}</b> per paycheque (${pc.n} left)`:days>0?`Save ${money(left/Math.max(1,days/7))}/week (no paycheque pattern detected yet)`:""}</div>`:""}</div>`;
+   ${left>0&&target?`<div class="tiny" style="margin-top:6px">${per!=null?`Save <b>${money(per)}</b> per paycheque (${pc.n} left)`:days>0?`Save ${money(left/Math.max(1,days/7))}/week (not enough history yet; set your pay schedule in Settings)`:""}</div>`:""}</div>`;
 }
 export function goals(){return syncLine()+ctx.S.goals.map(goalCard).join("")+`<button class="btn" onclick="openGoal()">Add goal</button>`;}
 
@@ -97,13 +97,14 @@ export function plan(){
   const total=ch.reduce((s,r)=>s+A.monthlyCost(r),0);
   const fc=!f?empty("Forecast needs a synced chequing account."):`<div class="card ${f.firstLow?"warn":""}"><div class="section-title">Cash-flow forecast · ${esc(f.acct.name)}</div>${chart(f)}
     <div class="kv"><span>Today${f.net&&f.owed?" (free, net of cards)":" (free)"}</span><b>${money(f.start)}</b></div>
-    ${f.nextPay?`<div class="kv"><span>Day before payday (${niceDate(f.nextPay.date)})</span><b>${money(f.balAtPay)}</b></div><div class="kv"><span>Next paycheque</span><b class="pos">${money(f.nextPay.amount,true)}</b></div>`:'<div class="tiny">No recurring deposit detected yet (needs 2+ regular paycheques).</div>'}
+    ${f.nextPay?`<div class="kv"><span>Day before payday (${niceDate(f.nextPay.date)})</span><b>${money(f.balAtPay)}</b></div><div class="kv"><span>Next paycheque</span><b class="pos">${money(f.nextPay.amount,true)}</b></div>`:'<div class="tiny">Not enough history yet. Set your pay schedule in Settings.</div>'}
     <div class="kv"><span>Lowest (${niceDate(f.min.date)})</span><b class="${f.min.bal<f.low?"neg":""}">${money(f.min.bal)}</b></div>
     <div class="kv"><span>Everyday spending assumed</span><b>${money(f.daily*30.44)}/mo</b></div><div class="kv"><span>In 60 days</span><b>${money(f.end)}</b></div>
     ${f.firstLow?`<div class="tiny neg" style="margin-top:6px">Warning: projected below your ${money(f.low)} floor on ${niceDate(f.firstLow.date)}.</div>`:""}
     <details style="margin-top:8px"><summary class="tiny">Upcoming (${f.events.length})</summary>${f.events.slice(0,25).map(e=>`<div class="kv"><span class="l">${niceDate(e.date)} · ${esc(e.name)}</span><b class="${e.amount>0?"pos":""}">${money(e.amount,true)}</b></div>`).join("")}</details></div>`;
   const subs=`<div class="card"><div class="section-title">Subscriptions & bills <span class="tiny">≈ ${money(total)}/mo</span></div>
     ${ch.map(r=>`<div class="kv"><span class="l">${dot(r.category)}${esc(r.merchant)}${r.isNew?' <span class="flag">new</span>':""}${r.increased?` <span class="flag">up from ${money(r.prevAmount)}</span>`:""}<br><span class="tiny">${A.periodLabel(r.period)} · next ~${niceDate(r.next)}</span></span><b>${money(r.amount)}</b></div>`).join("")||'<div class="tiny">None detected yet. Needs a couple of months of history.</div>'}</div>
+    ${!inc.length&&A.manualStreams().length?`<div class="card"><div class="section-title">Income (from your pay schedule)</div>${A.manualStreams().map(r=>`<div class="kv"><span class="l">${esc(r.merchant)}<br><span class="tiny">${A.periodLabel(r.period)} · next ${niceDate(r.next)}</span></span><b class="pos">${money(r.amount)}</b></div>`).join("")}</div>`:""}
     ${inc.length?`<div class="card"><div class="section-title">Income detected</div>${inc.map(r=>`<div class="kv"><span class="l">${esc(r.merchant)}<br><span class="tiny">${A.periodLabel(r.period)} · next ~${niceDate(r.next)}</span></span><b class="pos">${money(r.amount)}</b></div>`).join("")}</div>`:""}`;
   return syncLine()+fc+subs+debts();
 }
@@ -131,6 +132,11 @@ export function settings(){const S=ctx.S,st=S.settings;
    <label><input type="checkbox" id="s-inv" ${st.showInvest?"checked":""} style="width:auto"> Show Invest tab</label>
    <label><input type="checkbox" id="s-hide" ${st.hideMoney?"checked":""} style="width:auto"> Hide amounts</label>
    <button class="btn" onclick="saveSettings()">Save</button></div>
+  <div class="card"><div class="section-title">Pay schedule</div><div class="tiny">Used for the forecast and goals until enough paycheques have synced to detect the pattern automatically${A.recurring().some(r=>r.type==="income")?' (<span class="pos">auto-detected now, so this is ignored</span>)':""}.</div>
+   ${[0,1].map(i=>{const j=(st.paySchedule||[])[i]||{};return `<div style="margin-top:10px"><label>Job ${i+1} name</label><input id="ps-name${i}" value="${esc(j.name||"")}" placeholder="${i?"e.g. EA":"e.g. Chartright"}">
+   <div class="grid2"><div><label>Take-home per cheque</label><input id="ps-amt${i}" type="number" step="0.01" value="${j.amount||""}"></div><div><label>How often</label><select id="ps-freq${i}">${["biweekly","weekly","semimonthly","monthly"].map(f=>`<option value="${f}" ${(j.frequency||"biweekly")===f?"selected":""}>${{biweekly:"Every 2 weeks",weekly:"Weekly",semimonthly:"Twice a month",monthly:"Monthly"}[f]}</option>`).join("")}</select></div></div>
+   <label>Next pay date</label><input id="ps-next${i}" type="date" value="${j.next||""}"></div>`;}).join("")}
+   <button class="btn" onclick="savePaySchedule()">Save pay schedule</button></div>
   <div class="card"><div class="section-title">Style</div><div class="theme-grid">${STYLES.map(s=>`<button class="theme-chip ${(st.style||"vault")===s.id?"on":""}" onclick="setStyle('${s.id}')"><span class="theme-swatch" style="background:${s.a}"><i style="background:${s.b}"></i></span>${s.name}</button>`).join("")}</div></div>
   <div class="card"><div class="section-title">Merchant category overrides</div>${Object.entries(S.merchantCats).map(([k,c])=>`<div class="kv"><span class="l">${esc(k)} → ${c}</span><button class="chip" onclick="clearCat('${esc(k)}')">reset</button></div>`).join("")||'<div class="tiny">None. Tap a transaction on Spending to set one.</div>'}</div>
   <div class="card"><div class="section-title">Backup</div><button class="btn" onclick="exportData()">Export backup (JSON)</button><button class="btn ghost" onclick="document.getElementById('imp').click()">Restore backup</button><input id="imp" type="file" accept="application/json" style="display:none" onchange="importData(event)"><button class="btn ghost" onclick="exportMonthPdf()">Print this month (PDF)</button></div>

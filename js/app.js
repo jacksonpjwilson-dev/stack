@@ -6,9 +6,10 @@ import {esc,val,num,uid,monthKey,monthLabel,todayISO} from "./util.js";
 import {demoState} from "./demo.js";
 import * as VA from "./virtuals.js";
 
-export const APP_BUILD=42;
+export const APP_BUILD=43;
 ctx.S=ctx.demo?migrate(demoState()):loadLocal();
 if(VA.applyDue())save();
+rollPay();
 
 const TITLES={home:null,spending:"Spending",budgets:"Budgets",plan:"Plan",goals:"Goals",sync:"Sync",settings:"Settings",invest:"Invest"};
 function greeting(){const h=new Date().getHours(),n=(ctx.S.settings.name||"").trim();const hi=h<12?"Good morning":h<17?"Good afternoon":"Good evening";return n?hi+", "+n.split(" ")[0]:hi;}
@@ -72,6 +73,9 @@ G.openDebt=id=>{const d=ctx.S.debts.find(x=>x.id===id)||{name:"",principal:"",ap
 G.saveDebt=id=>{const old=ctx.S.debts.find(x=>x.id===id)||{};const rec={...old,id:id||uid(),name:val("f-name"),balance:num("f-amt"),payments:[],apr:num("f-apr"),minPay:num("f-min"),note:val("f-note")};const L=ctx.S.debts,i=L.findIndex(x=>x.id===rec.id);i>=0?L[i]=rec:L.push(rec);save();G.closeSheet();render();};
 
 G.saveSettings=()=>{const st=ctx.S.settings;st.name=val("s-name");st.lowBalance=num("s-low");st.primaryAccountId=val("s-prim");st.showInvest=document.getElementById("s-inv").checked;st.netCredit=document.getElementById("s-net").checked;st.hideMoney=document.getElementById("s-hide").checked;save();render();};
+G.savePaySchedule=()=>{ctx.S.settings.paySchedule=[0,1].map(i=>({name:val("ps-name"+i).trim(),amount:num("ps-amt"+i),frequency:val("ps-freq"+i),next:val("ps-next"+i)})).filter(j=>j.name||j.amount);save();render();};
+// roll manual next dates forward so they stay current
+function rollPay(){let ch=false;(ctx.S.settings.paySchedule||[]).forEach(j=>{const r=A.manualStreams().find(x=>x.merchant===(j.name||"Pay"));if(!r)return;let g=0;while(j.next<todayISO()&&g++<200){j.next=A.stepDate(r,j.next);ch=true;}});if(ch)save();}
 G.setStyle=id=>{ctx.S.settings.style=id;save();render();};
 G.adjust=id=>{ctx.S.adjustments.push({id:uid(),accountId:id,balance:num("adj-"+id),at:Date.now()});save();render();};
 G.setAvatar=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{ctx.S.settings.avatar=r.result;save();paintAvatar();};r.readAsDataURL(f);};

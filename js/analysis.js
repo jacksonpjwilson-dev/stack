@@ -94,8 +94,9 @@ export function forecast(days=60){
   const net=!!ctx.S.settings.netCredit,cards=(ctx.S.bank.accounts||[]).filter(isCredit),cardIds=new Set(cards.map(a=>a.id));
   const inScope=id=>!id||id===acct.id||(net&&cardIds.has(id));
   const scoped=rec.filter(r=>inScope(r.accountId));
+  if(!scoped.some(r=>r.type==="income"))scoped.push(...manualStreams());
   const events=[],today=todayISO(),end=addDays(today,days);
-  for(const r of scoped){let d=r.next;let guard=0;while(d<=today&&guard++<50)d=addDays(d,r.period);while(d<=end&&guard++<200){events.push({date:d,amount:r.type==="income"?r.amount:-r.amount,name:r.merchant,type:r.type});d=addDays(d,r.period);}}
+  for(const r of scoped){let d=r.next;let guard=0;while(d<=today&&guard++<50)d=stepDate(r,d);while(d<=end&&guard++<200){events.push({date:d,amount:r.type==="income"?r.amount:-r.amount,name:r.merchant,type:r.type});d=stepDate(r,d);}}
   for(const c of upcomingVirtual(today,end))if(c.accountId===acct.id)events.push({date:c.date,amount:-c.amount,name:"→ "+c.virtual+" (virtual)",type:"virtual"});
   events.sort((a,b)=>a.date.localeCompare(b.date));
   // everyday (non-recurring) outflow from this account, incl. card payments/transfers, averaged over 60 days
@@ -112,9 +113,14 @@ export function forecast(days=60){
   const firstLow=pts.find(p=>p.bal<low);
   return {acct,net,owed,daily,start,pts,events,min,nextPay,balAtPay,firstLow,low,end:bal,incomeStreams:scoped.filter(r=>r.type==="income")};
 }
+// Manual pay schedule (Settings) used until auto-detection finds a pattern.
+const FREQ={weekly:7,biweekly:14,semimonthly:15,monthly:30};
+export function manualStreams(){return (ctx.S.settings.paySchedule||[]).filter(j=>Number(j.amount)>0&&j.next&&FREQ[j.frequency]).map(j=>({type:"income",manual:true,merchant:j.name||"Pay",category:"Income",amount:Number(j.amount),period:FREQ[j.frequency],monthly:j.frequency==="monthly",next:j.next,accountId:""}));}
+export const stepDate=(r,d)=>r.monthly?addMonths(d,1):addDays(d,r.period);
+export function incomeStreams(){const det=recurring().filter(r=>r.type==="income");return det.length?det:manualStreams();}
 export function paychequesBetween(a,b){
-  const inc=recurring().filter(r=>r.type==="income");if(!inc.length)return null;
-  const main=inc.sort((x,y)=>y.amount-x.amount)[0];let d=main.next,n=0,g=0;while(d<=a&&g++<100)d=addDays(d,main.period);while(d<=b&&g++<400){n++;d=addDays(d,main.period);}return {n,stream:main};
+  const inc=incomeStreams();if(!inc.length)return null;
+  const main=[...inc].sort((x,y)=>monthlyCost(y)-monthlyCost(x))[0];let d=main.next,n=0,g=0;while(d<=a&&g++<100)d=stepDate(main,d);while(d<=b&&g++<400){n++;d=stepDate(main,d);}return {n,stream:main};
 }
 
 // Weekly summary + unusual charges.
