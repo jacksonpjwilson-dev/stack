@@ -1,5 +1,6 @@
 import {ctx,loadLocal,save,pullCloud,pushCloud,fbConfig,migrate,FB_LS,retryPullSoon} from "./store.js";
 import {removeAccount} from "./match.js";
+import {canRequest,newRequest} from "./refresh.js";
 import * as V from "./views.js";
 import * as A from "./analysis.js";
 import {runSync} from "./sync.js";
@@ -7,7 +8,7 @@ import {esc,val,num,uid,monthKey,monthLabel,todayISO} from "./util.js";
 import {demoState} from "./demo.js";
 import * as VA from "./virtuals.js";
 
-export const APP_BUILD=45;
+export const APP_BUILD=46;
 ctx.S=ctx.demo?migrate(demoState()):loadLocal();
 if(VA.applyDue())save();
 rollPay();
@@ -111,11 +112,22 @@ if("serviceWorker" in navigator&&!ctx.demo)navigator.serviceWorker.register("sw.
 if(ctx.demo)document.body.insertAdjacentHTML("afterbegin",'<div class="demo-banner">DEMO MODE · made-up data · nothing is saved</div>');
 initFirebase();render();
 setTimeout(()=>{const s=document.getElementById("splash");if(s)s.remove();},1200);
-ctx.onCloud=()=>{if(!document.getElementById("sheet").classList.contains("open"))render();};
+ctx.onCloud=()=>{const r=ctx.refreshReq;if(r&&(r.status==="pending"||r.status==="claimed"))watchRefresh();if(!document.getElementById("sheet").classList.contains("open"))render();};
 addEventListener("online",retryPullSoon);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&(!ctx.cloudOk||Date.now()-ctx.cloudOk>60000||ctx.cloudMsg))retryPullSoon();});
 G.removeAcct=id=>{const a=ctx.S.bank.accounts.find(x=>x.id===id);if(!a)return;
   if(!confirm(`Remove ${a.name}${a.mask?" ··"+a.mask:""} and its transactions from Stack? Future imports will skip it.`))return;
   removeAccount(ctx.S,id,true);save();render();};
 G.unignoreMask=m=>{ctx.S.settings.ignoredMasks=(ctx.S.settings.ignoredMasks||[]).filter(x=>x!==m);save();render();};
+// Refresh from BMO: write the request, then watch the doc until the worker marks it done/error (or lastSynced advances).
+G.requestRefresh=async()=>{if(!ctx.fbUser||!ctx.fbDb)return;const c=canRequest(ctx.refreshReq);if(!c.ok)return render();
+  const req=newRequest();ctx.refreshReq=req;render();
+  try{await ctx.fbDb.doc("stack/"+ctx.fbUser.uid).update({refreshRequest:req});watchRefresh();}
+  catch(e){ctx.refreshReq={...req,status:"error",error:e.code||e.message||String(e)};render();}};
+let unwatch=null;
+function watchRefresh(){if(unwatch||!ctx.fbUser)return;
+  unwatch=ctx.fbDb.doc("stack/"+ctx.fbUser.uid).onSnapshot(snap=>{const d=snap.data()||{},r=d.refreshRequest||null,prev=ctx.refreshReq;ctx.refreshReq=r;
+    const finished=r&&(r.status==="done"||r.status==="error");
+    if(finished&&prev&&prev.status!==r.status){if(r.status==="done")pullCloud();unwatch();unwatch=null;}
+    render();},e=>{console.warn("watch",e);unwatch=null;});}
 G.__stack=ctx; // for debugging/tests

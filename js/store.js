@@ -104,7 +104,9 @@ export function save(){
 }
 export async function pushCloud(){
   if(ctx.demo||!ctx.fbDb||!ctx.fbUser)return false;
-  try{await ctx.fbDb.doc("stack/"+ctx.fbUser.uid).set({state:ctx.S,updatedAt:Date.now()});ctx.S._lastCloud=Date.now();ctx.cloudMsg="";return true;}
+  // update() replaces only these fields, so refreshRequest (written by the app/worker) is not wiped; set() only for a brand-new doc
+  try{const ref=ctx.fbDb.doc("stack/"+ctx.fbUser.uid),d={state:ctx.S,updatedAt:Date.now()};
+    try{await ref.update(d);}catch(e){if(e&&e.code==="not-found")await ref.set(d);else throw e;}ctx.S._lastCloud=Date.now();ctx.cloudMsg="";return true;}
   catch(e){console.warn("push",e);ctx.cloudMsg="Cloud save failed: "+(e.message||e);return false;}
 }
 // Cold start / back from background on iOS: Firestore may not be connected yet ("client is offline").
@@ -124,6 +126,7 @@ async function pullOnce(){
     let snap;
     try{snap=await Promise.race([ref.get(),new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),8000))]);}
     catch(e){if(!transient(e))throw e;snap=await ref.get({source:"cache"}).catch(()=>null);if(!snap)throw e;ctx.cloudPending=true;} // persisted cache meanwhile
+    if(snap.exists)ctx.refreshReq=snap.data().refreshRequest||null;
     if(snap.exists&&snap.data().state){
       const before=JSON.stringify(snap.data().state);
       ctx.S=migrate(snap.data().state);

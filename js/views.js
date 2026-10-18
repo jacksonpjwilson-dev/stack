@@ -1,4 +1,5 @@
 import {ctx} from "./store.js";
+import {refreshLabel,canRequest} from "./refresh.js";
 import * as A from "./analysis.js";
 import * as VA from "./virtuals.js";
 import {esc,ago,todayISO,monthKey,monthLabel,niceDate,daysBetween,addDays} from "./util.js";
@@ -9,7 +10,10 @@ const dot=c=>`<span class="cat-dot" style="background:${A.catColor(c)};display:i
 const empty=(t)=>`<div class="card empty"><div class="tiny">${t}</div><button class="btn" style="margin-top:10px" onclick="showView('sync')">Open Sync</button></div>`;
 
 function syncLine(){const B=ctx.S.bank;const stale=B.lastSynced&&Date.now()-Date.parse(B.lastSynced)>36*3600e3;
-  return `<div class="tiny" style="margin:2px 0 12px">${B.lastSynced?`Synced ${ago(B.lastSynced)}`:"Not synced yet"}${stale?' <span class="flag">stale</span>':""} · ${ctx.fbUser?"Cloud: "+esc(ctx.fbUser.email||""):ctx.demo?"Demo data":"This device only"}${ctx.cloudMsg?` · <span class="${ctx.cloudMsg==="Syncing…"?"":"neg"}">${esc(ctx.cloudMsg)}</span>`:""}</div>`;}
+  return `<div class="tiny" style="margin:2px 0 12px">${B.lastSynced?`Synced ${ago(B.lastSynced)}`:"Not synced yet"}${stale?' <span class="flag">stale</span>':""} · ${ctx.fbUser?"Cloud: "+esc(ctx.fbUser.email||""):ctx.demo?"Demo data":"This device only"}${ctx.cloudMsg?` · <span class="${ctx.cloudMsg==="Syncing…"?"":"neg"}">${esc(ctx.cloudMsg)}</span>`:""}${refreshBit()}</div>`;}
+function refreshBit(){if(!ctx.fbUser||ctx.demo)return "";const r=ctx.refreshReq,l=refreshLabel(r,ctx.S.bank.lastSynced),c=canRequest(r);
+  const busy=r&&(r.status==="pending"||r.status==="claimed")&&l==="Refresh requested…";
+  return ` · ${l?`<span id="refreshLbl">${esc(l)}</span> `:""}${busy?"":`<button class="chip" id="refreshBtn" ${c.ok?"":"disabled"} onclick="requestRefresh()">${c.ok?"Refresh from BMO":"Refresh in "+Math.ceil(c.wait/60e3)+"m"}</button>`}`;}
 
 export function home(){
   const S=ctx.S,acc=S.bank.accounts;
