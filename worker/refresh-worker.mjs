@@ -15,11 +15,17 @@ const wj=(f,o)=>{fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync
 
 // --- doc access: {get():data|null, update(fields)}; real = firebase-admin transaction-free updates (single writer) ---
 export function fakeDoc(file){return {get:async()=>rj(file),update:async f=>{const d=rj(file)||{};wj(file,{...d,...f});}};}
-async function realDoc(){
-  const key=process.env.STACK_SA_KEY,uid=process.env.STACK_UID;if(!key||!uid)throw new Error("STACK_SA_KEY and STACK_UID must be set");
+const mustUid=()=>{const u=process.env.STACK_UID;if(!u)throw new Error("STACK_UID must be set");return u;};
+// Key from STACK_SA_KEY_JSON (full JSON) or STACK_SA_KEY (path to a 600 file outside the repo). Never logged.
+export async function adminDb(){
+  const raw=process.env.STACK_SA_KEY_JSON,cred=raw?JSON.parse(raw):process.env.STACK_SA_KEY?rj(process.env.STACK_SA_KEY):null;
+  if(!cred)throw new Error("STACK_SA_KEY_JSON or STACK_SA_KEY must be set");
   const admin=(await import("firebase-admin")).default;
-  if(!admin.apps.length)admin.initializeApp({credential:admin.credential.cert(rj(key)),projectId:"stackapphtml"});
-  const ref=admin.firestore().doc("stack/"+uid);
+  if(!admin.apps.length)admin.initializeApp({credential:admin.credential.cert(cred),projectId:"stackapphtml"});
+  return admin.firestore();
+}
+async function realDoc(){
+  const ref=(await adminDb()).doc(process.env.STACK_DOC||("stack/"+mustUid()));
   return {get:async()=>{const s=await ref.get();return s.exists?s.data():null;},update:async f=>ref.update(f)};
 }
 
@@ -49,6 +55,7 @@ export async function pass(doc,dir=DIR,log=console.log){
 
 if(import.meta.url===`file://${process.argv[1]}`){
   const doc=process.env.STACK_FAKE_DB?fakeDoc(process.env.STACK_FAKE_DB):await realDoc();
-  const out=await pass(doc);
+  const out=await pass(doc);if(out!=="idle")console.log(out);
   if(out!=="idle"&&out!=="waiting")fs.appendFileSync("/home/box/shared/crew/runs.jsonl",JSON.stringify({ts:new Date().toISOString(),bot:"Felix",routine:"stack-refresh-worker",status:out==="done"?"ok":out,note:"refresh request "+out})+"\n");
+  process.exit(0);
 }
