@@ -1,6 +1,7 @@
 // Bulk import of a bank snapshot pasted by the Stack Finance bot (or the user).
 import {ctx,save,pushCloud} from "./store.js";
 import {applyOverride,applyDue} from "./virtuals.js";
+import {findRelinked,repoint,dropRelinkedDupes,ignoredMasks} from "./match.js";
 const isDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(String(s||""));
 export function parsePayload(text){
   let p;try{p=JSON.parse(String(text||"").trim());}catch(e){throw new Error("Not valid JSON: "+e.message);}
@@ -14,13 +15,23 @@ export function parsePayload(text){
   return {lastSynced:p.lastSynced||new Date().toISOString(),accounts,transactions,virtualAccounts:Array.isArray(p.virtualAccounts)?p.virtualAccounts:[],flip:p.amountSign==="positive-outflow"};
 }
 export function applyPayload(p){
-  const B=ctx.S.bank;const r={accountsUpdated:0,accountsAdded:0,added:0,updated:0,unchanged:0};
+  const B=ctx.S.bank;const r={accountsUpdated:0,accountsAdded:0,accountsRelinked:0,txRepointed:0,dupesDropped:0,added:0,updated:0,unchanged:0};
+  // drop accounts the user removed (by mask), and their transactions
+  const ign=ignoredMasks(ctx.S),skipIds=new Set(B.accounts.filter(a=>ign.has(String(a.mask||""))).map(a=>a.id));
+  p={...p,accounts:p.accounts.filter(a=>{if(a.mask&&ign.has(String(a.mask))){skipIds.add(String(a.id));return false;}return true;})};
+  p.transactions=p.transactions.filter(t=>!skipIds.has(String(t.accountId||"")));r.accountsSkipped=skipIds.size;
+  const incomingIds=new Set(p.accounts.map(a=>String(a.id))),moved=new Set();
   for(const a of p.accounts){
     const rec={id:String(a.id),name:a.name||"Account",mask:a.mask?String(a.mask):"",type:a.type||"",subtype:a.subtype||"",
       currentBalance:Number(a.currentBalance)||0,availableBalance:a.availableBalance==null?null:Number(a.availableBalance)};
-    const i=B.accounts.findIndex(x=>x.id===rec.id);
+    if(a.institution)rec.institution=String(a.institution);
+    let i=B.accounts.findIndex(x=>x.id===rec.id);
+    if(i<0){const j=findRelinked(B.accounts,rec,incomingIds);
+      if(j>=0){const oldId=B.accounts[j].id;r.txRepointed+=repoint(ctx.S,oldId,rec.id);B.accounts[j].id=rec.id;moved.add(rec.id);r.accountsRelinked++;i=j;}}
     if(i>=0){B.accounts[i]={...B.accounts[i],...rec};r.accountsUpdated++;}else{B.accounts.push(rec);r.accountsAdded++;}
   }
+  if(moved.size){const inTx=p.transactions.map(t=>{let a=Number(t.amount);if(p.flip)a=-a;return {id:String(t.id),date:String(t.date),amount:Math.round(a*100)/100,merchant:String(t.merchant||t.name||"Unknown"),accountId:t.accountId?String(t.accountId):""};});
+    r.dupesDropped=dropRelinkedDupes(B,inTx,moved);}
   const idx=new Map(B.transactions.map((t,i)=>[t.id,i]));
   for(const t of p.transactions){
     let amt=Number(t.amount);if(p.flip)amt=-amt;

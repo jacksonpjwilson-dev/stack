@@ -1,4 +1,5 @@
-import {ctx,loadLocal,save,pullCloud,pushCloud,fbConfig,migrate,FB_LS} from "./store.js";
+import {ctx,loadLocal,save,pullCloud,pushCloud,fbConfig,migrate,FB_LS,retryPullSoon} from "./store.js";
+import {removeAccount} from "./match.js";
 import * as V from "./views.js";
 import * as A from "./analysis.js";
 import {runSync} from "./sync.js";
@@ -6,7 +7,7 @@ import {esc,val,num,uid,monthKey,monthLabel,todayISO} from "./util.js";
 import {demoState} from "./demo.js";
 import * as VA from "./virtuals.js";
 
-export const APP_BUILD=43;
+export const APP_BUILD=45;
 ctx.S=ctx.demo?migrate(demoState()):loadLocal();
 if(VA.applyDue())save();
 rollPay();
@@ -31,7 +32,7 @@ G.closeSheet=()=>document.getElementById("sheet").classList.remove("open");
 const catOpts=sel=>A.CATS.map(([c])=>`<option ${c===sel?"selected":""}>${c}</option>`).join("");
 
 G.doSync=async()=>{const out=document.getElementById("syncResult"),btn=document.getElementById("syncBtn");btn.disabled=true;
-  try{const r=await runSync(val("syncInput"));out.innerHTML=`<span class="pos">Imported.</span> +${r.added} new, ${r.updated} updated, ${r.unchanged} unchanged, ${r.pendingResolved} pending resolved${r.virtualsOverridden?` · ${r.virtualsOverridden} virtual set`:""}${r.contributionsApplied?` · ${r.contributionsApplied} contributions`:""} · ${r.accountsUpdated} accounts updated, ${r.accountsAdded} added · ${esc(r.cloud)}`;out.dataset.status="ok";document.getElementById("syncInput").value="";const st=document.getElementById("syncStats");if(st)st.innerHTML=V.syncStats();}
+  try{const r=await runSync(val("syncInput"));out.innerHTML=`<span class="pos">Imported.</span> +${r.added} new, ${r.updated} updated, ${r.unchanged} unchanged, ${r.pendingResolved} pending resolved${r.virtualsOverridden?` · ${r.virtualsOverridden} virtual set`:""}${r.contributionsApplied?` · ${r.contributionsApplied} contributions`:""} · ${r.accountsUpdated} accounts updated, ${r.accountsAdded} added${r.accountsRelinked?`, ${r.accountsRelinked} re-linked`:""}${r.accountsSkipped?`, ${r.accountsSkipped} skipped (removed)`:""} · ${esc(r.cloud)}`;out.dataset.status="ok";document.getElementById("syncInput").value="";const st=document.getElementById("syncStats");if(st)st.innerHTML=V.syncStats();}
   catch(e){out.innerHTML=`<span class="neg">Import failed: ${esc(e.message)}</span>`;out.dataset.status="error";}
   btn.disabled=false;};
 
@@ -97,7 +98,7 @@ G.showAuth=()=>document.getElementById("authGate").classList.add("show");
 const hideAuth=()=>document.getElementById("authGate").classList.remove("show");
 function initFirebase(){
   if(ctx.demo||typeof firebase==="undefined")return false;
-  try{if(!ctx.fbAuth){firebase.initializeApp(fbConfig());ctx.fbAuth=firebase.auth();ctx.fbDb=firebase.firestore();}
+  try{if(!ctx.fbAuth){firebase.initializeApp(fbConfig());ctx.fbAuth=firebase.auth();ctx.fbDb=firebase.firestore();try{ctx.fbDb.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn("persistence",e.code||e));}catch(e){}}
     ctx.fbAuth.onAuthStateChanged(async u=>{ctx.fbUser=u||null;if(u){ctx.fbSkip=false;hideAuth();authMsg("");ctx.pulling=pullCloud();await ctx.pulling;ctx.pulling=null;if(VA.applyDue())save();render();}else if(!ctx.fbSkip)G.showAuth();render();});return true;}
   catch(e){console.warn(e);return false;}
 }
@@ -110,4 +111,11 @@ if("serviceWorker" in navigator&&!ctx.demo)navigator.serviceWorker.register("sw.
 if(ctx.demo)document.body.insertAdjacentHTML("afterbegin",'<div class="demo-banner">DEMO MODE · made-up data · nothing is saved</div>');
 initFirebase();render();
 setTimeout(()=>{const s=document.getElementById("splash");if(s)s.remove();},1200);
+ctx.onCloud=()=>{if(!document.getElementById("sheet").classList.contains("open"))render();};
+addEventListener("online",retryPullSoon);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&(!ctx.cloudOk||Date.now()-ctx.cloudOk>60000||ctx.cloudMsg))retryPullSoon();});
+G.removeAcct=id=>{const a=ctx.S.bank.accounts.find(x=>x.id===id);if(!a)return;
+  if(!confirm(`Remove ${a.name}${a.mask?" ··"+a.mask:""} and its transactions from Stack? Future imports will skip it.`))return;
+  removeAccount(ctx.S,id,true);save();render();};
+G.unignoreMask=m=>{ctx.S.settings.ignoredMasks=(ctx.S.settings.ignoredMasks||[]).filter(x=>x!==m);save();render();};
 G.__stack=ctx; // for debugging/tests

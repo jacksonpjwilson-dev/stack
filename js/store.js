@@ -1,6 +1,7 @@
 // State, migration, local + Firestore persistence (stack/<uid>, same as before).
 import {uid} from "./util.js";
 import {seedVirtuals} from "./virtuals.js";
+import {removeAccount} from "./match.js";
 export const KEY="finly.v2";
 export const SCHEMA=3;
 export const FIREBASE={
@@ -75,6 +76,13 @@ function seed(s){
     }
     s.settings.fix2Goals=true;
   }
+  // fix-3 (Oct 2026): Jackson removed Smart Saver ··7685 from Stack; drop it and ignore it on future imports
+  if(!s.settings.fix3Drop7685){
+    if(!Array.isArray(s.settings.ignoredMasks))s.settings.ignoredMasks=[];
+    for(const a of (s.bank.accounts||[]).filter(a=>String(a.mask||"")==="7685"))removeAccount(s,a.id,true);
+    if(!s.settings.ignoredMasks.includes("7685"))s.settings.ignoredMasks.push("7685");
+    s.settings.fix3Drop7685=true;
+  }
   if(!s.settings.drGoalSeeded){
     if(!s.goals.some(g=>/dominican|vacation|trip|travel|holiday/i.test(g.name||"")))
       s.goals.push({id:"goal-dr-trip",name:"Dominican Republic trip",target:0,saved:0,date:"2026-12-28",accountId:""});
@@ -99,22 +107,43 @@ export async function pushCloud(){
   try{await ctx.fbDb.doc("stack/"+ctx.fbUser.uid).set({state:ctx.S,updatedAt:Date.now()});ctx.S._lastCloud=Date.now();ctx.cloudMsg="";return true;}
   catch(e){console.warn("push",e);ctx.cloudMsg="Cloud save failed: "+(e.message||e);return false;}
 }
-export async function pullCloud(){
-  if(ctx.demo||!ctx.fbDb||!ctx.fbUser)return;
+// Cold start / back from background on iOS: Firestore may not be connected yet ("client is offline").
+// Keep showing the local copy, say "Syncing…" quietly, and retry with backoff; online/visibility retry sooner.
+let pullTry=0,pullTimer=null,pullInflight=null;
+const transient=e=>/offline|unavailable|timeout|deadline|network|failed to get document/i.test(String(e&&(e.code||"")+" "+(e.message||e)));
+export function pullCloud(){
+  if(ctx.demo||!ctx.fbDb||!ctx.fbUser)return Promise.resolve();
+  if(pullInflight)return pullInflight;
+  clearTimeout(pullTimer);
+  pullInflight=pullOnce().finally(()=>{pullInflight=null;});
+  return pullInflight;
+}
+async function pullOnce(){
   try{
-    const snap=await Promise.race([ctx.fbDb.doc("stack/"+ctx.fbUser.uid).get(),new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),8000))]);
+    const ref=ctx.fbDb.doc("stack/"+ctx.fbUser.uid);
+    let snap;
+    try{snap=await Promise.race([ref.get(),new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),8000))]);}
+    catch(e){if(!transient(e))throw e;snap=await ref.get({source:"cache"}).catch(()=>null);if(!snap)throw e;ctx.cloudPending=true;} // persisted cache meanwhile
     if(snap.exists&&snap.data().state){
       const before=JSON.stringify(snap.data().state);
       ctx.S=migrate(snap.data().state);
       localStorage.setItem(KEY,JSON.stringify(ctx.S));
-      // one-time backup copy of the pre-migration doc inside the same user's doc tree
-      if(!snap.data().state.schema||snap.data().state.schema<SCHEMA){
+      if(!ctx.cloudPending&&(!snap.data().state.schema||snap.data().state.schema<SCHEMA)){
         try{await ctx.fbDb.doc("stack/"+ctx.fbUser.uid+"/backups/pre-v3").set({state:JSON.parse(before),at:Date.now()});}catch(e){console.warn("backup",e);}
         await pushCloud();
       }
-    }else await pushCloud();
-  }catch(e){console.warn("pull",e);ctx.cloudMsg="Could not load cloud data ("+(e.message||e)+")";}
+    }else if(!ctx.cloudPending)await pushCloud();
+    if(ctx.cloudPending){ctx.cloudPending=false;ctx.cloudMsg="Syncing…";schedulePull();}
+    else{pullTry=0;ctx.cloudMsg="";ctx.cloudOk=Date.now();}
+  }catch(e){
+    console.warn("pull",e);
+    if(transient(e)){ctx.cloudMsg="Syncing…";schedulePull();}
+    else ctx.cloudMsg="Could not load cloud data ("+(e.message||e)+")";
+  }
+  if(ctx.onCloud)ctx.onCloud();
 }
+function schedulePull(){clearTimeout(pullTimer);const ms=Math.min(60000,2000*2**pullTry++);pullTimer=setTimeout(pullCloud,ms);}
+export function retryPullSoon(){if(!ctx.fbUser||ctx.demo)return;pullTry=0;pullCloud();}
 export function fbConfig(){
   const ok=c=>c&&c.apiKey&&c.projectId;
   try{const x=JSON.parse(localStorage.getItem(FB_LS)||"null");if(ok(x))return x;}catch(e){}
