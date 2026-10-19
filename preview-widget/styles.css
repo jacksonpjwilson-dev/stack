@@ -225,3 +225,16 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 .homebar,.ovh{-webkit-user-select:none;user-select:none}
 .compact .wsplitn>div{padding:3px 8px}.compact .wsplitn span{font-size:9.5px;display:block;line-height:1.15}.compact .wsplitn b{font-size:13.5px;line-height:1.25}
 .compact .w.M .wn{font-size:23px}
+/* w2: sign-in, empty states, first-run setup */
+.sgate{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(120% 60% at 0% 0%,rgba(212,176,106,.18),transparent 60%),var(--bg,#0c121b);color:var(--text,#e8eef6);overflow:auto}
+.sgi{width:100%;max-width:380px;display:flex;flex-direction:column;gap:8px}
+.sgi .applogo{width:84px;height:84px;border-radius:22px;display:block;margin:0 auto 8px;box-shadow:0 14px 30px rgba(0,0,0,.3)}
+.sgi h2{text-align:center;margin:0;font-size:30px;letter-spacing:-.02em}.sgi .lede{text-align:center;color:var(--muted,#8b97a8);margin:0 0 8px}
+.sgi .seg{margin:4px 0}.sgi input{color:inherit}.sgerr{color:var(--neg,#ef7a8a);min-height:1em;margin:4px 0 0;font-size:14px;text-align:center}
+.sgi .btn{background:var(--accent,#d4b06a);color:var(--on,#0c121b)}.sgi .btn.ghost{background:var(--card2,#1f2836);color:var(--text,#e8eef6)}
+.wempty{display:flex;flex-direction:column;gap:3px;margin-top:auto}.wempty b{font-size:15px;line-height:1.2;color:var(--text)}
+.emptyc{text-align:center}.emptyc h2{justify-content:center}
+.onb.setup .obmain{justify-content:flex-start;overflow-y:auto;padding-top:8px}.onb.setup h2{text-align:left;font-size:28px}.onb.setup p.lede{text-align:left;margin-left:0}
+.onb.setup .obfoot .row .btn{flex:1}.sudots{display:flex;gap:6px;margin:0 0 18px}.sudots i{flex:1;height:4px;border-radius:4px;background:var(--line)}.sudots i.on{background:var(--accent)}
+.surow{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px;margin-bottom:8px}.surow .row input{min-width:0}
+.wempty .wcta{color:var(--accent)!important}
