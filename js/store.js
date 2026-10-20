@@ -18,7 +18,7 @@ export const ctx={S:null,view:"home",demo:/[?&]demo=1\b/.test(location.search),f
 
 export function defaultState(){return{
   schema:SCHEMA,
-  settings:{name:"",currency:"CAD",symbol:"$",theme:"dark",style:"vault",lowBalance:200,primaryAccountId:"",avatar:"",netCredit:true},
+  settings:{name:"",currency:"CAD",symbol:"$",theme:"dark",style:"vault",lowBalance:200,primaryAccountId:"",avatar:"",netCredit:false},
   bank:{lastSynced:null,accounts:[],transactions:[],imports:[]},
   merchantCats:{},   // merchant key -> category override
   budgets:[],        // {id,category,limit}
@@ -63,6 +63,11 @@ function seed(s){
     // drop single-category budgets fully covered by another multi-category budget (e.g. old "Groceries" pot vs Food)
     s.budgets=s.budgets.filter(b=>!(b.categories.length===1&&s.budgets.some(o=>o!==b&&o.categories.length>1&&o.categories.includes(b.categories[0]))));
     s.settings.fix1Budgets=true;
+  }
+  if(!s.settings.chqNoCardV1){
+    // Jackson: Chequing shows the real Chequing balance; the credit card stays its own item (turn back on in Settings if wanted)
+    s.settings.netCredit=false;
+    s.settings.chqNoCardV1=true;
   }
   seedVirtuals(s);
   // fix-2: merge the auto-seeded DR goal into an existing vacation-like goal; link it to the Vacation virtual account
